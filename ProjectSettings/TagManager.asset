@@ -10,6 +10,7 @@ TagManager:
   - wall
   - target
   - patlama
+  - targetbomb
   layers:
   - Default
   - TransparentFX

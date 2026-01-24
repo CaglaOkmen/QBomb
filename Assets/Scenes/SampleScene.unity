@@ -208,7 +208,7 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: -4186691453373395820, guid: 8df3955a98f0d194a8a60dab7a6cb788, type: 3}
       propertyPath: gamma
-      value: 0.99
+      value: 0.9997
       objectReference: {fileID: 0}
     - target: {fileID: -4186691453373395820, guid: 8df3955a98f0d194a8a60dab7a6cb788, type: 3}
       propertyPath: batchSize
@@ -216,7 +216,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -4186691453373395820, guid: 8df3955a98f0d194a8a60dab7a6cb788, type: 3}
       propertyPath: maxEpisode
-      value: 100
+      value: 200
       objectReference: {fileID: 0}
     - target: {fileID: -4186691453373395820, guid: 8df3955a98f0d194a8a60dab7a6cb788, type: 3}
       propertyPath: minEpsilon
@@ -229,6 +229,14 @@ PrefabInstance:
     - target: {fileID: -4186691453373395820, guid: 8df3955a98f0d194a8a60dab7a6cb788, type: 3}
       propertyPath: learningRate
       value: 0.0001
+      objectReference: {fileID: 0}
+    - target: {fileID: -4186691453373395820, guid: 8df3955a98f0d194a8a60dab7a6cb788, type: 3}
+      propertyPath: saveFileName
+      value: qbomb_not_safe.json
+      objectReference: {fileID: 0}
+    - target: {fileID: -4186691453373395820, guid: 8df3955a98f0d194a8a60dab7a6cb788, type: 3}
+      propertyPath: useSafetyRule
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: -4186691453373395820, guid: 8df3955a98f0d194a8a60dab7a6cb788, type: 3}
       propertyPath: hiddenLayerSize
