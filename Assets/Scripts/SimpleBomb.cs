@@ -12,6 +12,9 @@ public class SimpleBomb : MonoBehaviour
     int bombGridX;
     int bombGridY;
 
+    public enum BombOwner { Agent, Target }
+    public BombOwner owner;
+
     Vector2Int[] dirs = { new Vector2Int(0, 0), new Vector2Int(1, 0), new Vector2Int(-1, 0), new Vector2Int(0, 1), new Vector2Int(0, -1) };
 
     private void Start()
@@ -26,6 +29,10 @@ public class SimpleBomb : MonoBehaviour
         bombGridY = Mathf.RoundToInt(transform.position.y / cellSize);
     }
 
+    public void SetOwner(BombOwner bombOwner)
+    {
+        owner = bombOwner;
+    }
 
     // Ajan her adim attiginda Env tarafindan bu cagrilir
     public void OnStep()
@@ -42,7 +49,14 @@ public class SimpleBomb : MonoBehaviour
     {
         DestroyAll(bombGridX, bombGridY);
         Destroy(gameObject);
-        if (env != null) env.bombActive = false;
+        // Bomba sahibine gore aktif bomba sayisini azalt
+        if (env != null)
+        {
+            if (owner == BombOwner.Agent)
+                env.agentBombActive = false;
+            else if (owner == BombOwner.Target)
+                env.targetBombActive = false;
+        }
     }
 
     void DestroyAll(int x, int y)
@@ -72,12 +86,22 @@ public class SimpleBomb : MonoBehaviour
                 // Hedef kontrolu
                 if (nx == env.targetX && ny == env.targetY)
                 {
+                    if (owner == BombOwner.Target)
+                        env.LogDeath("Target kendi bombasýyla öldü.");
+                    else
+                        env.LogDeath("Target, Ajan'ýn bombasýyla öldü.");
+
                     env.kill = true;
                 }
 
                 // Ajan kontrolu
                 if (nx == env.gridX && ny == env.gridY)
                 {
+                    if (owner == BombOwner.Agent)
+                        env.LogDeath("Ajan kendi bombasýyla öldü.");
+                    else
+                        env.LogDeath("Ajan, Target'ýn bombasýyla öldü.");
+
                     env.isAlive = false;
                 }
             }

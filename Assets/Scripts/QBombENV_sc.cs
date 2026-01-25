@@ -18,7 +18,9 @@ public class QBombENV_sc : MonoBehaviour
     public int gridX;
     public int gridY;
     public bool isAlive;
-    public bool bombActive;
+    public bool agentBombActive;
+    public bool targetBombActive;
+
     public bool[,] dangerMap;
     
     public int targetX, targetY;
@@ -28,9 +30,23 @@ public class QBombENV_sc : MonoBehaviour
     public int[,] map; // 0:zemin, 1:breakable, 2:unbreakable
 
     private Pathfinder pathfinder;
-    private GameObject activeBombObject;
+
+    private List<GameObject> activeBombs = new List<GameObject>(); // Aktif tum bombalar
 
     private int consecutiveWaitCount = 0; // Peþ peþe bekleme sayýsý
+
+    public bool bombActive
+    {
+        get { return agentBombActive || targetBombActive; }
+        set { agentBombActive = value; }
+    }
+
+    private string deathReason = "";
+
+    public void LogDeath(string reason)
+    {
+        deathReason = reason;
+    }
 
     private void Start()
     {
@@ -41,14 +57,13 @@ public class QBombENV_sc : MonoBehaviour
         }
         else
         {
-            Debug.LogError("HATA: agentObject Inspector'dan atanmadý!");
+            Debug.LogError("HATA: agentObject Inspector'dan atanmadi!");
         }
 
         if (targetObject == null)
         {
-            Debug.LogError("HATA: targetObject Inspector'dan atanmadý!");
+            Debug.LogError("HATA: targetObject Inspector'dan atanmadi!");
         }
-
         CreateGrid();
         ResetAgentAndTarget();
     }
@@ -101,16 +116,83 @@ public class QBombENV_sc : MonoBehaviour
             agentObject.transform.position = new Vector3(gridX * cellSize, gridY * cellSize, 0);
         }
 
-        targetX = width - 2;
-        targetY = height - 2;
         kill = false;
+        consecutiveWaitCount = 0;
+
+        bool randomPos = false;
+        if (targetObject != null)
+        {
+            CurriculumTarget ct = targetObject.GetComponent<CurriculumTarget>();
+            // Faz 1 rastgele pozisyona koy
+            if (ct != null && ct.currentPhase == 1)
+            {
+                randomPos = true;
+            }
+        }
+
+        if (randomPos)
+        {
+            // Faz 1: Rastgele
+            SetRandomTargetPosition();
+        }
+        else
+        {
+            // Faz 2 ve 3: Sabit
+            targetX = width - 2;
+            targetY = height - 2;
+        }
 
         if (targetObject != null)
         {
             targetObject.transform.position = new Vector3(targetX * cellSize, targetY * cellSize, 0);
         }
+    }
 
-        consecutiveWaitCount = 0;
+    void SetRandomTargetPosition()
+    {
+        int attempts = 30;
+        while (attempts > 0)
+        {
+            int rx = Random.Range(1, width - 1);
+            int ry = Random.Range(1, height - 1);
+
+            if (Mathf.Abs(rx - gridX) + Mathf.Abs(ry - gridY) < 3)
+            {
+                attempts--;
+                continue;
+            }
+
+            if (map[rx, ry] == 0)
+            {
+                targetX = rx;
+                targetY = ry;
+                return;
+            }
+            attempts--;
+        }
+        targetX = width - 2;
+        targetY = height - 2;
+    }
+
+    // Bomba koyma fonksiyonu - owner bilgisiyle
+    public GameObject PlaceBomb(int x, int y, SimpleBomb.BombOwner owner)
+    {
+        GameObject bombObj = Instantiate(bomb, new Vector3(x * cellSize, y * cellSize, 0), Quaternion.identity);
+        SimpleBomb bombScript = bombObj.GetComponent<SimpleBomb>();
+
+        if (bombScript != null)
+        {
+            bombScript.SetOwner(owner);
+        }
+
+        activeBombs.Add(bombObj);
+
+        if (owner == SimpleBomb.BombOwner.Agent)
+            agentBombActive = true;
+        else if (owner == SimpleBomb.BombOwner.Target)
+            targetBombActive = true;
+
+        return bombObj;
     }
 
     public (float reward, bool done) Step(int action)
@@ -119,12 +201,21 @@ public class QBombENV_sc : MonoBehaviour
         int newX = gridX;
         int newY = gridY;
 
-        if (!isAlive) return (-200f, true);
-        if (kill) return (200f, true);
+        if (!isAlive)
+        {
+            Debug.Log($"---{deathReason}---");
+            return (-200f, true);
+        }
+        if (kill)
+        {
+            Debug.Log($"---{deathReason}---");
+            return (200f, true);
+        }
+
         // --- BEKLEME (5) ---
         if (action == 5) 
         {
-            if (!bombActive) reward -= 0.5f;
+            if (!agentBombActive) reward -= 0.5f;
             consecutiveWaitCount++;
             if (consecutiveWaitCount > 3)
             {
@@ -144,18 +235,17 @@ public class QBombENV_sc : MonoBehaviour
         }
 
         // --- HAREKETLER (0-3) ---
-        if (action == 0) newY += 1;      // Yukarý
-        else if (action == 1) newY -= 1; // Aþaðý
-        else if (action == 2) newX += 1; // Sað
+        if (action == 0) newY += 1; // Yukari
+        else if (action == 1) newY -= 1; // Asagi
+        else if (action == 2) newX += 1; // Sag
         else if (action == 3) newX -= 1; // Sol
 
         // --- BOMBA KOYMA (4) ---
         else if (action == 4)
         {
-            if (!bombActive)
+            if (!agentBombActive)
             {
-                activeBombObject = Instantiate(bomb, new Vector3(gridX * cellSize, gridY * cellSize, 0), Quaternion.identity);
-                bombActive = true;
+                PlaceBomb(gridX, gridY, SimpleBomb.BombOwner.Agent);
 
                 bool threatensTarget = IsTargetInBlastRange(gridX, gridY);
                 int broken = stratejiControl(gridX, gridY);
@@ -170,7 +260,7 @@ public class QBombENV_sc : MonoBehaviour
 
                         if (dist < 3.0f)
                         {
-                            // Hedef yakýnda, belki gelir stratejik
+                            // Hedef yakinda, belki gelir stratejik
                             reward -= 0.1f;
                         }
                         else if (dist == 3.0f)
@@ -179,7 +269,7 @@ public class QBombENV_sc : MonoBehaviour
                         }
                         else
                         {
-                            // Hedef uzakta, etraf boþ
+                            // Hedef uzakta, etraf bos
                             reward -= 2.0f;
                         }
                     }
@@ -187,7 +277,6 @@ public class QBombENV_sc : MonoBehaviour
                     {
                         reward += (broken * 5f);
                     }
-
                 }
                 else // Hedef menzildeyse 
                 {
@@ -230,18 +319,14 @@ public class QBombENV_sc : MonoBehaviour
             }
         }
         if (pathfinder.IsInDanger(gridX, gridY)) reward -= 0.1f;
-        
+
         if (agentObject != null)
             agentObject.transform.position = new Vector3(gridX * cellSize, gridY * cellSize, 0);
 
-        
-        if (bombActive && activeBombObject != null)
-        {
-            SimpleBomb bombScript = activeBombObject.GetComponent<SimpleBomb>();
-            if (bombScript != null) bombScript.OnStep();
-        }
+        // Tum bombalari guncelle
+        UpdateAllBombs();
 
-        // Target hareketi ajanla ayný zamanli
+        // Target hareketi
         if (targetObject != null)
         {
             CurriculumTarget ct = targetObject.GetComponent<CurriculumTarget>();
@@ -251,6 +336,25 @@ public class QBombENV_sc : MonoBehaviour
             }
         }
         return (reward, terminated);
+    }
+
+    void UpdateAllBombs()
+    {
+        // Null bombalari temizle
+        activeBombs.RemoveAll(b => b == null);
+
+        // Her bombayý güncelle
+        foreach (GameObject bombObj in activeBombs)
+        {
+            if (bombObj != null)
+            {
+                SimpleBomb bombScript = bombObj.GetComponent<SimpleBomb>();
+                if (bombScript != null)
+                {
+                    bombScript.OnStep();
+                }
+            }
+        }
     }
 
     bool IsTargetInBlastRange(int bombX, int bombY)
@@ -295,7 +399,8 @@ public class QBombENV_sc : MonoBehaviour
         CreateGrid(); // Haritayi yeniden olustur
 
         terminated = false;
-        bombActive = false;
+        agentBombActive = false;
+        targetBombActive = false;
 
         // Ajan ve Target pozisyonlarýný sifirla
         ResetAgentAndTarget();
