@@ -32,8 +32,10 @@ public class QBombENV_sc : MonoBehaviour
     private Pathfinder pathfinder;
 
     private List<GameObject> activeBombs = new List<GameObject>(); // Aktif tum bombalar
+    public enum DeathType { None, Suicide, KilledByTarget }
+    public DeathType deathType = DeathType.None;
 
-    private int consecutiveWaitCount = 0; // Peþ peþe bekleme sayýsý
+    private int consecutiveWaitCount = 0;
 
     public bool bombActive
     {
@@ -54,15 +56,6 @@ public class QBombENV_sc : MonoBehaviour
         {
             pathfinder = agentObject.GetComponent<Pathfinder>();
             if (pathfinder == null) pathfinder = agentObject.AddComponent<Pathfinder>();
-        }
-        else
-        {
-            Debug.LogError("HATA: agentObject Inspector'dan atanmadi!");
-        }
-
-        if (targetObject == null)
-        {
-            Debug.LogError("HATA: targetObject Inspector'dan atanmadi!");
         }
         CreateGrid();
         ResetAgentAndTarget();
@@ -91,7 +84,7 @@ public class QBombENV_sc : MonoBehaviour
                     if ((x != 1 || y != 1) && (x != 1 || y != 2) && (x != 2 || y != 1) && (x != width - 2 || y != height - 2)
                         && (x != width - 2 || y != height - 3) && (x != width - 3 || y != height - 2))
                     {
-                        if (Random.Range(0, 2) == 0) // %50 ihtimalle kýrýlabilir duvar
+                        if (Random.Range(0, 2) == 0) // %50 ihtimalle kirilabilir duvar
                         {
                             map[x, y] = 1;
                             Instantiate(breakable_wall, pos, Quaternion.identity);
@@ -110,11 +103,10 @@ public class QBombENV_sc : MonoBehaviour
         gridX = 1;
         gridY = 1;
         isAlive = true;
+        deathType = DeathType.None; // Sifirla
 
         if (agentObject != null)
-        {
             agentObject.transform.position = new Vector3(gridX * cellSize, gridY * cellSize, 0);
-        }
 
         kill = false;
         consecutiveWaitCount = 0;
@@ -123,29 +115,14 @@ public class QBombENV_sc : MonoBehaviour
         if (targetObject != null)
         {
             CurriculumTarget ct = targetObject.GetComponent<CurriculumTarget>();
-            // Faz 1 rastgele pozisyona koy
-            if (ct != null && ct.currentPhase == 1)
-            {
-                randomPos = true;
-            }
+            if (ct != null && ct.currentPhase == 1) randomPos = true;
         }
 
-        if (randomPos)
-        {
-            // Faz 1: Rastgele
-            SetRandomTargetPosition();
-        }
-        else
-        {
-            // Faz 2 ve 3: Sabit
-            targetX = width - 2;
-            targetY = height - 2;
-        }
+        if (randomPos) SetRandomTargetPosition(); // Faz 1: Rastgele
+        else { targetX = width - 2; targetY = height - 2; } // Faz 2 ve 3: Sabit
 
         if (targetObject != null)
-        {
             targetObject.transform.position = new Vector3(targetX * cellSize, targetY * cellSize, 0);
-        }
     }
 
     void SetRandomTargetPosition()
@@ -155,19 +132,8 @@ public class QBombENV_sc : MonoBehaviour
         {
             int rx = Random.Range(1, width - 1);
             int ry = Random.Range(1, height - 1);
-
-            if (Mathf.Abs(rx - gridX) + Mathf.Abs(ry - gridY) < 3)
-            {
-                attempts--;
-                continue;
-            }
-
-            if (map[rx, ry] == 0)
-            {
-                targetX = rx;
-                targetY = ry;
-                return;
-            }
+            if (Mathf.Abs(rx - gridX) + Mathf.Abs(ry - gridY) < 3) { attempts--; continue; }
+            if (map[rx, ry] == 0) { targetX = rx; targetY = ry; return; }
             attempts--;
         }
         targetX = width - 2;
@@ -180,17 +146,11 @@ public class QBombENV_sc : MonoBehaviour
         GameObject bombObj = Instantiate(bomb, new Vector3(x * cellSize, y * cellSize, 0), Quaternion.identity);
         SimpleBomb bombScript = bombObj.GetComponent<SimpleBomb>();
 
-        if (bombScript != null)
-        {
-            bombScript.SetOwner(owner);
-        }
-
+        if (bombScript != null) bombScript.SetOwner(owner);
         activeBombs.Add(bombObj);
 
-        if (owner == SimpleBomb.BombOwner.Agent)
-            agentBombActive = true;
-        else if (owner == SimpleBomb.BombOwner.Target)
-            targetBombActive = true;
+        if (owner == SimpleBomb.BombOwner.Agent) agentBombActive = true;
+        else if (owner == SimpleBomb.BombOwner.Target) targetBombActive = true;
 
         return bombObj;
     }
@@ -203,36 +163,34 @@ public class QBombENV_sc : MonoBehaviour
 
         if (!isAlive)
         {
-            Debug.Log($"---{deathReason}---");
-            return (-200f, true);
+            if (deathType == DeathType.Suicide)
+            {
+                Debug.Log("--- SUICIDE (-300) ---");
+                return (-300f, true);
+            }
+            else
+            {
+                Debug.Log("--- KILLED BY TARGET (-100) ---");
+                return (-100f, true);
+            }
         }
         if (kill)
         {
-            Debug.Log($"---{deathReason}---");
+            Debug.Log("--- TARGET ELIMINATED (+200) ---");
             return (200f, true);
         }
-
         // --- BEKLEME (5) ---
         if (action == 5) 
         {
             if (!agentBombActive) reward -= 0.5f;
             consecutiveWaitCount++;
-            if (consecutiveWaitCount > 3)
-            {
-                // 3 kereden fazla beklerse artan ceza
-                reward -= 0.1f * (consecutiveWaitCount - 3);
-            }
+            if (consecutiveWaitCount > 3) reward -= 0.1f * (consecutiveWaitCount - 3);
         }
-        else
-        {
-            consecutiveWaitCount = 0;
-        }
+        else consecutiveWaitCount = 0;
 
         float oldDistanceToTarget = float.MaxValue;
         if (pathfinder != null && targetX != -1)
-        {
             oldDistanceToTarget = pathfinder.GetDistanceToTarget(gridX, gridY, targetX, targetY);
-        }
 
         // --- HAREKETLER (0-3) ---
         if (action == 0) newY += 1; // Yukari
@@ -246,47 +204,24 @@ public class QBombENV_sc : MonoBehaviour
             if (!agentBombActive)
             {
                 PlaceBomb(gridX, gridY, SimpleBomb.BombOwner.Agent);
-
                 bool threatensTarget = IsTargetInBlastRange(gridX, gridY);
                 int broken = stratejiControl(gridX, gridY);
 
-                // Stratejik hamle mi
                 if (!threatensTarget)
                 {
                     if (broken == 0)
                     {
                         // Hedef menzilde degil ve duvar kirilmadi
                         float dist = Mathf.Abs(targetX - gridX) + Mathf.Abs(targetY - gridY);
-
-                        if (dist < 3.0f)
-                        {
-                            // Hedef yakinda, belki gelir stratejik
-                            reward -= 0.1f;
-                        }
-                        else if (dist == 3.0f)
-                        {
-                            reward -= 0.5f; // Hedef gelebilir ama daha dusuk ihtimal
-                        }
-                        else
-                        {
-                            // Hedef uzakta, etraf bos
-                            reward -= 2.0f;
-                        }
+                        if (dist < 3.0f) reward -= 0.1f; // Hedef yakinda, belki gelir stratejik
+                        else if (dist == 3.0f) reward -= 0.5f; // Hedef gelebilir ama daha dusuk ihtimal
+                        else reward -= 2.0f; // Hedef uzakta, etraf bos
                     }
-                    else // duvar kiriyorsa 
-                    {
-                        reward += (broken * 5f);
-                    }
+                    else reward += (broken * 5f); // duvar kiriyorsa 
                 }
-                else // Hedef menzildeyse 
-                {
-                    reward += 20.0f;
-                }
+                else reward += 20.0f; // Hedef menzildeyse 
             }
-            else // Bomba varken
-            {
-                reward -= 5f;
-            }
+            else reward -= 5f; // Bomba varken
         }
 
         // Targete yakinlasma uzaklasma

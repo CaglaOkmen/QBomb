@@ -20,18 +20,39 @@ public class AjanRL : MonoBehaviour
 
     [Header("Train modu")]
     public bool isTraining = false;
-    private string saveFileName = "bomberman_mlp_spatial.json";
+    private string saveFileName = "bomberman_mlp_v2.json";
 
     [Header("Guvenlik katmaný")]
     public bool useSafetyRule = true;
-
 
     [Header("Gorselleme")]
     public float currentEpisodeReward = 0;
     public int currentEpisodeSteps = 0;
     public int currentEpisodeIndex = 0;
 
-    private int observationRadius = 1;
+    // 13 Hucre 
+    private readonly Vector2Int[] observationPattern = new Vector2Int[]
+    {
+        // Mesafe 0 (Merkez)
+        new Vector2Int(0, 0),
+
+        // Mesafe 1 (3x3 Karenin geri kalani - 8 hucre)
+        new Vector2Int(0, 1),   // Yukari
+        new Vector2Int(0, -1),  // Asagi
+        new Vector2Int(1, 0),   // Sag
+        new Vector2Int(-1, 0),  // Sol
+        new Vector2Int(1, 1),   // Sag-Ust
+        new Vector2Int(-1, 1),  // Sol-Ust
+        new Vector2Int(1, -1),  // Sag-Alt
+        new Vector2Int(-1, -1), // Sol-Alt
+
+        // Mesafe 2 (Sadece Arti Sekli - 4 hucre)
+        new Vector2Int(0, 2),   // Yukari 2
+        new Vector2Int(0, -2),  // Asagi 2
+        new Vector2Int(2, 0),   // Sag 2
+        new Vector2Int(-2, 0)   // Sol 2
+    };
+
     private int inputSize;
 
     private SimpleMLP mlp;
@@ -48,13 +69,13 @@ public class AjanRL : MonoBehaviour
 
     void Awake()
     {
-        // 6 kanal (IsWall, IsBreakable, IsTarget, IsBomb, RelX, RelY)
-        int gridCells = (observationRadius * 2 + 1) * (observationRadius * 2 + 1);
-        int channelsPerCell = 6; 
+        // 5 kanal (IsWall, IsBreakable, IsTarget, IsBomb, BombTimer)
+        int gridCells = observationPattern.Length;
+        int channelsPerCell = 5;
         int gridInputs = gridCells * channelsPerCell;
 
-        // Global inputs: Target X,Y, Targete uzaklýk, tehlikede mi, bomba aktif mi
-        int globalInputs = 5;
+        // Global inputs: Target X,Y, Targete uzaklýk, tehlikede mi, Ajan ve Target bombalai aktif mi
+        int globalInputs = 6;
 
         inputSize = gridInputs + globalInputs;
 
@@ -87,40 +108,42 @@ public class AjanRL : MonoBehaviour
         float cellSize = env.cellSize;
         Vector2 agentPos = transform.position;
 
-        for (int y = observationRadius; y >= -observationRadius; y--)
+        // 1 birim tam cevre ve 2 birim uzaklik + seklindeki alanlar
+        foreach (Vector2Int offset in observationPattern)
         {
-            for (int x = -observationRadius; x <= observationRadius; x++)
+            Vector2 scanPos = agentPos + new Vector2(offset.x * cellSize, offset.y * cellSize);
+
+            bool isWall = false;
+            bool isBreakable = false;
+            bool isTarget = false;
+            bool isBomb = false;
+            float bombTimer = 0f; // 0: Yok, 0-1 arasi: patlama suresi
+
+            Collider2D hit = Physics2D.OverlapBox(scanPos, Vector2.one * (cellSize * 0.9f), 0);
+            if (hit != null)
             {
-                Vector2 scanPos = agentPos + new Vector2(x * cellSize, y * cellSize);
-
-                bool isWall = false;
-                bool isBreakable = false;
-                bool isTarget = false;
-                bool isBomb = false;
-
-
-                Collider2D hit = Physics2D.OverlapBox(scanPos, Vector2.one * (cellSize * 0.9f), 0);
-                if (hit != null)
+                if (hit.CompareTag("wall")) isWall = true;
+                else if (hit.CompareTag("breakable")) isBreakable = true;
+                else if (hit.CompareTag("target")) isTarget = true;
+                else if (hit.CompareTag("bomb"))
                 {
-                    if (hit.CompareTag("wall")) isWall = true;
-                    else if (hit.CompareTag("breakable")) isBreakable = true;
-                    else if (hit.CompareTag("bomb")) isBomb = true;
-                    else if (hit.CompareTag("target")) isTarget = true;
+                    isBomb = true;
+                    // Bombanin patlamasina ne kadar kaldi
+                    SimpleBomb sb = hit.GetComponent<SimpleBomb>();
+                    
+                    // +1 ekleyerek 0 olmamasini sagliyoruz (0 bomba yok demek)
+                    // Ornegin 3 adimli bombada: 1/4, 2/4, 3/4, 4/4 gibi degerler alir
+                    bombTimer = (float)(sb.currentStep + 1) / (sb.explosionSteps + 1);
                 }
-
-
-                // Onehot kodlama
-                observations[index++] = isWall ? 1.0f : 0.0f;
-                observations[index++] = isBreakable ? 1.0f : 0.0f;
-                observations[index++] = isTarget ? 1.0f : 0.0f;
-                observations[index++] = isBomb ? 1.0f : 0.0f;
-
-                float relativeX = (float)x / observationRadius;
-                float relativeY = (float)y / observationRadius;
-
-                observations[index++] = relativeX;
-                observations[index++] = relativeY;
             }
+
+            // Onehot kodlama ve Bomba zamani
+            observations[index++] = isWall ? 1.0f : 0.0f;
+            observations[index++] = isBreakable ? 1.0f : 0.0f;
+            observations[index++] = isTarget ? 1.0f : 0.0f;
+            observations[index++] = isBomb ? 1.0f : 0.0f;
+            observations[index++] = bombTimer; 
+
         }
 
         // hedefin yonu
@@ -134,10 +157,13 @@ public class AjanRL : MonoBehaviour
         float normalizedDist = manhattanDist / (env.width + env.height);
         observations[index++] = normalizedDist;
 
-        // Bomba durumu
-        observations[index++] = env.bombActive ? 1.0f : 0.0f;
+        // Ajan Bomba durumu
+        observations[index++] = env.agentBombActive ? 1.0f : 0.0f;
 
-        // Telike durumu
+        // Target Bomba durumu
+        observations[index++] = env.targetBombActive ? 1.0f : 0.0f;
+
+        // Tehlike durumu
         bool inDanger = pathfinder.IsInDanger(env.gridX, env.gridY);
         observations[index++] = inDanger ? 1.0f : 0.0f;
 
@@ -166,14 +192,12 @@ public class AjanRL : MonoBehaviour
             currentEpisodeReward = 0;
             currentEpisodeSteps = 0;
 
-
             System.Array.Clear(actionCounts, 0, actionCounts.Length);
 
             while (!done && steps < maxStepsPerEpisode)
             {
                 int action = 0;
                 float[] qValues = mlp.Forward(state);
-
 
                 // Karar mekanizmasý
                 if (useSafetyRule && pathfinder.IsInDanger(env.gridX, env.gridY))
@@ -192,7 +216,6 @@ public class AjanRL : MonoBehaviour
                         action = GetActionFromQ(qValues);
                     }
                 }
-
 
                 if (action < actionCounts.Length) actionCounts[action]++;
 
@@ -242,6 +265,7 @@ public class AjanRL : MonoBehaviour
         SaveNetwork();
         isTraining = false;
     }
+
     IEnumerator AjanTesting()
     {
         print("=== TESTING START ===");
@@ -317,6 +341,7 @@ public class AjanRL : MonoBehaviour
 
         print($"TEST FINISHED: {resultLog} in {steps} steps.");
     }
+
     void TrainNetwork()
     {
         List<Experience> batch = replayBuffer.Sample(batchSize);
@@ -358,6 +383,7 @@ public class AjanRL : MonoBehaviour
         bool down = IsValidMove(env.gridX, env.gridY - 1);
         bool right = IsValidMove(env.gridX + 1, env.gridY);
         bool left = IsValidMove(env.gridX - 1, env.gridY);
+
         // 2. Duvar maskeleme
         if (!up) qValues[0] = float.NegativeInfinity;
         if (!down) qValues[1] = float.NegativeInfinity;
@@ -388,19 +414,16 @@ public class AjanRL : MonoBehaviour
         bool right = IsValidMove(env.gridX + 1, env.gridY);
         bool left = IsValidMove(env.gridX - 1, env.gridY);
 
-        // Hareket aksiyonlarý
-        if (up) validActions.Add(0); // Yukarý
-        if (down) validActions.Add(1); // Aþaðý
-        if (right) validActions.Add(2); // Sað
-        if (left) validActions.Add(3); // Sol
+        if (up) validActions.Add(0);
+        if (down) validActions.Add(1);
+        if (right) validActions.Add(2);
+        if (left) validActions.Add(3);
 
-        // Bomba (eðer koyabiliyorsa)
         if (!env.bombActive)
             validActions.Add(4);
 
         validActions.Add(5);
 
-        // Geçerli action varsa rastgele seç
         if (validActions.Count > 0)
             return validActions[Random.Range(0, validActions.Count)];
 
@@ -410,11 +433,9 @@ public class AjanRL : MonoBehaviour
 
     bool IsValidMove(int x, int y)
     {
-        // Sýnýrlar icinde mi?
         if (x < 0 || x >= env.width || y < 0 || y >= env.height)
             return false;
 
-        // Yurunebilir alan mi? (0: zemin, 1: breakable, 2: unbreakable)
         if (env.map[x, y] != 0)
             return false;
 
@@ -436,7 +457,6 @@ public class AjanRL : MonoBehaviour
             print("Model loaded: " + path);
         }
     }
-
     private void OnDrawGizmos()
     {
         if (env == null) return;
@@ -444,46 +464,44 @@ public class AjanRL : MonoBehaviour
         float cellSize = env.cellSize;
         Vector3 agentPos = Application.isPlaying ? transform.position : transform.position;
 
-        for (int y = observationRadius; y >= -observationRadius; y--)
+        Vector2Int[] currentPattern = observationPattern;
+        if (currentPattern == null || currentPattern.Length == 0) return;
+
+        foreach (Vector2Int offset in currentPattern)
         {
-            for (int x = -observationRadius; x <= observationRadius; x++)
+            Vector3 drawPos = agentPos + new Vector3(offset.x * cellSize, offset.y * cellSize, 0);
+
+            float distanceFromCenter = Mathf.Sqrt(offset.x * offset.x + offset.y * offset.y);
+            float alpha = 0.5f - (distanceFromCenter * 0.15f);
+            if (alpha < 0.1f) alpha = 0.1f;
+
+            Gizmos.color = new Color(1, 1, 1, alpha);
+            Gizmos.DrawWireCube(drawPos, Vector3.one * cellSize);
+
+            if (Application.isPlaying)
             {
-                Vector3 drawPos = agentPos + new Vector3(x * cellSize, y * cellSize, 0);
-
-                float relativeX = (float)x / observationRadius;
-                float relativeY = (float)y / observationRadius;
-
-                float distanceFromCenter = Mathf.Sqrt(relativeX * relativeX + relativeY * relativeY);
-                float alpha = 0.1f + (distanceFromCenter * 0.1f);
-
-                Gizmos.color = new Color(1, 1, 1, alpha);
-                Gizmos.DrawWireCube(drawPos, Vector3.one * cellSize);
-
-                if (Application.isPlaying)
+                Collider2D hit = Physics2D.OverlapBox(drawPos, Vector2.one * (cellSize * 0.8f), 0);
+                if (hit != null)
                 {
-                    Collider2D hit = Physics2D.OverlapBox(drawPos, Vector2.one * (cellSize * 0.8f), 0);
-                    if (hit != null)
+                    if (hit.CompareTag("wall"))
                     {
-                        if (hit.CompareTag("wall"))
-                        {
-                            Gizmos.color = Color.black;
-                            Gizmos.DrawCube(drawPos, Vector3.one * cellSize * 0.9f);
-                        }
-                        else if (hit.CompareTag("breakable"))
-                        {
-                            Gizmos.color = new Color(0.5f, 0.5f, 0.5f, 0.4f);
-                            Gizmos.DrawCube(drawPos, Vector3.one * cellSize * 0.9f);
-                        }
-                        else if (hit.CompareTag("target"))
-                        {
-                            Gizmos.color = Color.green;
-                            Gizmos.DrawCube(drawPos, Vector3.one * cellSize * 0.5f);
-                        }
-                        else if (hit.CompareTag("bomb"))
-                        {
-                            Gizmos.color = Color.red;
-                            Gizmos.DrawSphere(drawPos, cellSize * 0.3f);
-                        }
+                        Gizmos.color = Color.black;
+                        Gizmos.DrawCube(drawPos, Vector3.one * cellSize * 0.9f);
+                    }
+                    else if (hit.CompareTag("breakable"))
+                    {
+                        Gizmos.color = new Color(0.5f, 0.5f, 0.5f, 0.4f);
+                        Gizmos.DrawCube(drawPos, Vector3.one * cellSize * 0.9f);
+                    }
+                    else if (hit.CompareTag("target"))
+                    {
+                        Gizmos.color = Color.green;
+                        Gizmos.DrawCube(drawPos, Vector3.one * cellSize * 0.5f);
+                    }
+                    else if (hit.CompareTag("bomb"))
+                    {
+                        Gizmos.color = Color.red;
+                        Gizmos.DrawSphere(drawPos, cellSize * 0.3f);
                     }
                 }
             }

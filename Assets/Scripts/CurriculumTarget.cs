@@ -154,11 +154,17 @@ public class CurriculumTarget : MonoBehaviour
     List<int> GetValidSafeMoves()
     {
         List<int> moves = new List<int>();
+
+        bool checkSafety = env.targetBombActive;
+
         for (int i = 0; i < 4; i++)
         {
             Vector2Int n = GetNextPos(i);
-            if (IsValidPos(n.x, n.y) && !env.dangerMap[n.x, n.y])
+
+            if (IsValidPos(n.x, n.y) && !checkSafety)
+            {
                 moves.Add(i);
+            }
         }
         return moves;
     }

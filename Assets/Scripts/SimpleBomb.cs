@@ -7,7 +7,7 @@ public class SimpleBomb : MonoBehaviour
     public GameObject patlama;
 
     public int explosionSteps = 3; // 3 adim sonra patlar
-    private int currentStep = 0;
+    public int currentStep = 0;
 
     int bombGridX;
     int bombGridY;
@@ -86,21 +86,14 @@ public class SimpleBomb : MonoBehaviour
                 // Hedef kontrolu
                 if (nx == env.targetX && ny == env.targetY)
                 {
-                    if (owner == BombOwner.Target)
-                        env.LogDeath("Target kendi bombasýyla öldü.");
-                    else
-                        env.LogDeath("Target, Ajan'ýn bombasýyla öldü.");
-
                     env.kill = true;
                 }
 
                 // Ajan kontrolu
                 if (nx == env.gridX && ny == env.gridY)
                 {
-                    if (owner == BombOwner.Agent)
-                        env.LogDeath("Ajan kendi bombasýyla öldü.");
-                    else
-                        env.LogDeath("Ajan, Target'ýn bombasýyla öldü.");
+                    if (owner == BombOwner.Agent) env.deathType = QBombENV_sc.DeathType.Suicide; // Kendi bombasi
+                    else env.deathType = QBombENV_sc.DeathType.KilledByTarget; // Rakip bombasi
 
                     env.isAlive = false;
                 }
