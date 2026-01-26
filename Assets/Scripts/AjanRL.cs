@@ -294,25 +294,7 @@ public class AjanRL : MonoBehaviour
             {
                 int safeMove = pathfinder.GetSafeMove(env.gridX, env.gridY);
                 if (safeMove != -1)
-                {
                     finalAction = safeMove;
-                    print($"TEHLÝKE TESPÝT EDÝLDÝ! Kaçýþ Modu: {finalAction} (RL kararý {rlAction} ezildi)");
-                }
-                else
-                {
-                    print($"TEHLÝKE! Ancak güvenli rota bulunamadý, RL kararý uygulanýyor: {finalAction}");
-                }
-            }
-            else
-            {
-                if (!useSafetyRule && pathfinder.IsInDanger(env.gridX, env.gridY))
-                {
-                    print($"TEHLÝKE VAR AMA 'SAFETY' KAPALI! RL Kararý: {finalAction}");
-                }
-                else
-                {
-                    print($"Güvenli. RL Kararý Uygulanýyor: {finalAction}");
-                }
             }
 
             (float r, bool t) = env.Step(finalAction);

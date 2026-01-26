@@ -48,6 +48,8 @@ public class SimpleBomb : MonoBehaviour
     void Patlat()
     {
         DestroyAll(bombGridX, bombGridY);
+        env.MarkBombDanger(bombGridX, bombGridY, false);
+
         Destroy(gameObject);
         // Bomba sahibine gore aktif bomba sayisini azalt
         if (env != null)
@@ -67,8 +69,6 @@ public class SimpleBomb : MonoBehaviour
             int ny = y + d.y;
             if (env != null && nx >= 0 && nx < env.width && ny >= 0 && ny < env.height)
             {
-                env.dangerMap[nx, ny] = false;
-
                 if (env.map[nx, ny] == 1) // Kirilabilir duvar
                 {
                     env.map[nx, ny] = 0;

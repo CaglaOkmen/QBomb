@@ -148,11 +148,33 @@ public class QBombENV_sc : MonoBehaviour
 
         if (bombScript != null) bombScript.SetOwner(owner);
         activeBombs.Add(bombObj);
+        MarkBombDanger(x, y, true);
 
         if (owner == SimpleBomb.BombOwner.Agent) agentBombActive = true;
         else if (owner == SimpleBomb.BombOwner.Target) targetBombActive = true;
 
         return bombObj;
+    }
+
+    public void MarkBombDanger(int x, int y, bool active)
+    {
+        Vector2Int[] dirs = {
+        new Vector2Int(0, 0),
+        new Vector2Int(1, 0),
+        new Vector2Int(-1, 0),
+        new Vector2Int(0, 1),
+        new Vector2Int(0, -1)
+    };
+
+        foreach (var d in dirs)
+        {
+            int nx = x + d.x;
+            int ny = y + d.y;
+            if (nx >= 0 && nx < width && ny >= 0 && ny < height)
+            {
+                dangerMap[nx, ny] = active;
+            }
+        }
     }
 
     public (float reward, bool done) Step(int action)
@@ -317,7 +339,6 @@ public class QBombENV_sc : MonoBehaviour
             int ny = y + d.y;
             if (nx >= 0 && nx < width && ny >= 0 && ny < height)
             {
-                dangerMap[nx, ny] = true;
                 if (map[nx, ny] == 1) brokenCount++;
             }
         }

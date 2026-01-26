@@ -218,7 +218,6 @@ public class CurriculumTarget : MonoBehaviour
     void PlaceBombAndEscape(Vector2Int escapeTarget)
     {
         env.PlaceBomb(env.targetX, env.targetY, SimpleBomb.BombOwner.Target);
-        MarkBombDanger(true);
         safeEscapeTarget = escapeTarget;
         escapeStepsRemaining = 4;
     }
@@ -281,16 +280,6 @@ public class CurriculumTarget : MonoBehaviour
         }
 
         return new Vector2Int(-1, -1);
-    }
-
-    void MarkBombDanger(bool active)
-    {
-        int tx = env.targetX, ty = env.targetY;
-        env.dangerMap[tx, ty] = active;
-        if (tx + 1 < env.width) env.dangerMap[tx + 1, ty] = active;
-        if (tx - 1 >= 0) env.dangerMap[tx - 1, ty] = active;
-        if (ty + 1 < env.height) env.dangerMap[tx, ty + 1] = active;
-        if (ty - 1 >= 0) env.dangerMap[tx, ty - 1] = active;
     }
 
     public void OnEpisodeEnd()
