@@ -11,8 +11,8 @@ public class Pathfinder : MonoBehaviour
     private Vector2Int? currentTargetCell;
     private List<Vector2Int> escapePath;
 
-    private enum PathType { None, Clear, Breakable }
-    private PathType currentPathType = PathType.None;
+    public enum PathType { None, Clear, Breakable }
+    public PathType currentPathType = PathType.None;
 
     [Header("Risk Parametreleri")]
     public float dangerWeight = 50f;

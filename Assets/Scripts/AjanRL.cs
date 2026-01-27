@@ -20,7 +20,8 @@ public class AjanRL : MonoBehaviour
 
     [Header("Train modu")]
     public bool isTraining = false;
-    private string saveFileName = "bomberman_mlp_v2.json";
+
+    public string currentSaveFileName = "default_model.json";
 
     [Header("Guvenlik katmaný")]
     public bool useSafetyRule = true;
@@ -29,6 +30,18 @@ public class AjanRL : MonoBehaviour
     public float currentEpisodeReward = 0;
     public int currentEpisodeSteps = 0;
     public int currentEpisodeIndex = 0;
+
+    // --- CSV raporlama icin
+    [Header("Analiz Verileri (Last Episode)")]
+    public string lastOutcome = "None";
+    public string lastDeathType = "None";
+    public float lastExplorationRate = 0f;
+    public int lastBombsDropped = 0;
+    public int lastSafetyDangerSteps = 0;
+
+    // Epsilon ve Faz Yonetimi
+    private int lastPhaseTracker = -1;
+    private CurriculumTarget targetScript;
 
     // 13 Hucre 
     private readonly Vector2Int[] observationPattern = new Vector2Int[]
@@ -67,20 +80,30 @@ public class AjanRL : MonoBehaviour
 
     private int[] actionCounts;
 
+    public void SetExperimentConfig(string fileName, bool safetyEnabled)
+    {
+        currentSaveFileName = fileName;
+        useSafetyRule = safetyEnabled;
+
+        // kayitli modeli yukle, yoksa sifir ag baslat
+        LoadNetwork();
+    }
+
     void Awake()
     {
-        // 5 kanal (IsWall, IsBreakable, IsTarget, IsBomb, BombTimer)
+        // 6 kanal (IsWall, IsBreakable, IsTarget, IsBomb, BombTimer, IsInDanger)
         int gridCells = observationPattern.Length;
-        int channelsPerCell = 5;
+        int channelsPerCell = 6;
         int gridInputs = gridCells * channelsPerCell;
 
-        // Global inputs: Target X,Y, Targete uzaklýk, tehlikede mi, Ajan ve Target bombalai aktif mi
-        int globalInputs = 6;
+        // Global inputs: Target X,Y, Targete uzaklýk, tehlikede mi, Ajan ve Target bombalai aktif mi, Yol acik kapali
+        int globalInputs = 7;
 
         inputSize = gridInputs + globalInputs;
 
         env = FindObjectOfType<QBombENV_sc>();
         pathfinder = gameObject.AddComponent<Pathfinder>();
+        targetScript = FindObjectOfType<CurriculumTarget>();
     }
 
     void Start()
@@ -97,7 +120,6 @@ public class AjanRL : MonoBehaviour
     void Update()
     {
         if (Input.GetKeyDown(KeyCode.Space)) { StopAllCoroutines(); StartCoroutine(AjanTraining()); }
-        if (Input.GetKeyDown(KeyCode.T)) { StopAllCoroutines(); StartCoroutine(AjanTesting()); }
         if (Input.GetKeyDown(KeyCode.K)) SaveNetwork();
     }
 
@@ -118,6 +140,7 @@ public class AjanRL : MonoBehaviour
             bool isTarget = false;
             bool isBomb = false;
             float bombTimer = 0f; // 0: Yok, 0-1 arasi: patlama suresi
+            bool isDangerous = false;
 
             Collider2D hit = Physics2D.OverlapBox(scanPos, Vector2.one * (cellSize * 0.9f), 0);
             if (hit != null)
@@ -130,11 +153,19 @@ public class AjanRL : MonoBehaviour
                     isBomb = true;
                     // Bombanin patlamasina ne kadar kaldi
                     SimpleBomb sb = hit.GetComponent<SimpleBomb>();
-                    
+
                     // +1 ekleyerek 0 olmamasini sagliyoruz (0 bomba yok demek)
                     // Ornegin 3 adimli bombada: 1/4, 2/4, 3/4, 4/4 gibi degerler alir
                     bombTimer = (float)(sb.currentStep + 1) / (sb.explosionSteps + 1);
                 }
+            }
+
+            int checkX = Mathf.RoundToInt(scanPos.x / cellSize);
+            int checkY = Mathf.RoundToInt(scanPos.y / cellSize);
+
+            if (checkX >= 0 && checkX < env.width && checkY >= 0 && checkY < env.height)
+            {
+                isDangerous = env.dangerMap[checkX, checkY];
             }
 
             // Onehot kodlama ve Bomba zamani
@@ -142,7 +173,8 @@ public class AjanRL : MonoBehaviour
             observations[index++] = isBreakable ? 1.0f : 0.0f;
             observations[index++] = isTarget ? 1.0f : 0.0f;
             observations[index++] = isBomb ? 1.0f : 0.0f;
-            observations[index++] = bombTimer; 
+            observations[index++] = bombTimer;
+            observations[index++] = isDangerous ? 1.0f : 0.0f;
 
         }
 
@@ -167,6 +199,9 @@ public class AjanRL : MonoBehaviour
         bool inDanger = pathfinder.IsInDanger(env.gridX, env.gridY);
         observations[index++] = inDanger ? 1.0f : 0.0f;
 
+        // Yol Acik, kapali
+        observations[index++] = (pathfinder.currentPathType == Pathfinder.PathType.Clear) ? 1.0f : 0.0f;
+
         return observations;
     }
 
@@ -176,13 +211,63 @@ public class AjanRL : MonoBehaviour
 
         winCount = 0; deathCount = 0; timeoutCount = 0;
 
-        print("=== TRAINING START ===");
+        epsilon = 1.0f;
+        lastPhaseTracker = -1; // Faz takibini sifirla
+
+        print($"=== TRAINING START ({currentSaveFileName}) ===");
         isTraining = true;
+
+        // Egitim baslarken UI sayacini temizle
+        if (FindObjectOfType<TrainingAnalyticsUI>())
+            FindObjectOfType<TrainingAnalyticsUI>().ResetTracking();
 
         for (int ep = 1; ep <= maxEpisode; ep++)
         {
+            Random.InitState(ep);
             currentEpisodeIndex = ep;
             env.Reset();
+
+            // Fazlara gore epsilon yonetimi
+            if (targetScript != null)
+            {
+                if (targetScript.curriculumEnabled)
+                {
+                    int currentPhase = targetScript.currentPhase;
+
+                    if (currentPhase != lastPhaseTracker)
+                    {
+                        if (currentPhase == 1)
+                        {
+                            // Faz 1: Hýzlý (1.0 -> 0.05, Decay 0.990)
+                            epsilonDecay = 0.99f;
+                        }
+                        else if (currentPhase == 2)
+                        {
+                            // Faz 2: Orta (Baslangic 0.8, Decay 0.995)
+                            epsilon = 0.8f;
+                            epsilonDecay = 0.995f;
+                            print($"<color=yellow>PHASE 2 START: Epsilon reset to 0.8</color>");
+                        }
+                        else if (currentPhase == 3)
+                        {
+                            // Faz 3: Yavas (Baslangic 0.6, Decay 0.999)
+                            epsilon = 0.6f;
+                            epsilonDecay = 0.999f;
+                            print($"<color=red>PHASE 3 START: Epsilon reset to 0.6</color>");
+                        }
+                        lastPhaseTracker = currentPhase;
+                    }
+                }
+                else
+                {
+                    // Mufredat Kapalý
+                    if (lastPhaseTracker != 0)
+                    {
+                        epsilonDecay = 0.999f;
+                        lastPhaseTracker = 0;
+                    }
+                }
+            }
 
             float[] state = GetObservation();
             bool done = false;
@@ -192,13 +277,18 @@ public class AjanRL : MonoBehaviour
             currentEpisodeReward = 0;
             currentEpisodeSteps = 0;
 
+            // Bolum istatistiklerini sifirlama
             System.Array.Clear(actionCounts, 0, actionCounts.Length);
+            int episodeRandomActionCount = 0;
+            int episodeBombs = 0;
+            int episodeDangerSteps = 0;
 
             while (!done && steps < maxStepsPerEpisode)
             {
                 int action = 0;
                 float[] qValues = mlp.Forward(state);
 
+                bool isRandomMove = false;
                 // Karar mekanizmasý
                 if (useSafetyRule && pathfinder.IsInDanger(env.gridX, env.gridY))
                 {
@@ -210,6 +300,7 @@ public class AjanRL : MonoBehaviour
                     if (Random.Range(0f, 1f) < epsilon)
                     {
                         action = GetRandomValidAction();
+                        isRandomMove = true;
                     }
                     else
                     {
@@ -218,6 +309,9 @@ public class AjanRL : MonoBehaviour
                 }
 
                 if (action < actionCounts.Length) actionCounts[action]++;
+                if (isRandomMove) episodeRandomActionCount++;
+                if (action == 4 && env.agentBombActive == false) episodeBombs++;
+                if (pathfinder.IsInDanger(env.gridX, env.gridY)) episodeDangerSteps++;
 
                 (float reward, bool terminated) = env.Step(action);
                 done = terminated;
@@ -240,11 +334,23 @@ public class AjanRL : MonoBehaviour
                 yield return null;
             }
 
-            // Ýstatistikler
             string resultReason = "TIMEOUT";
+            string dType = "None";
+
             if (env.kill) { resultReason = "WIN"; winCount++; }
-            else if (!env.isAlive) { resultReason = "DIED"; deathCount++; }
+            else if (!env.isAlive)
+            {
+                resultReason = "DEATH";
+                deathCount++;
+                dType = env.deathType.ToString(); // Suicide veya KilledByTarget
+            }
             else { timeoutCount++; }
+
+            lastOutcome = resultReason;
+            lastDeathType = dType;
+            lastBombsDropped = episodeBombs;
+            lastSafetyDangerSteps = episodeDangerSteps;
+            lastExplorationRate = (steps > 0) ? (float)episodeRandomActionCount / steps : 0;
 
             if (epsilon > minEpsilon)
             {
@@ -253,7 +359,7 @@ public class AjanRL : MonoBehaviour
 
             string actionReport = $"Actions => Y:{actionCounts[0]} A:{actionCounts[1]} S:{actionCounts[2]} Sol:{actionCounts[3]} B:{actionCounts[4]} WAIT:{actionCounts[5]}";
 
-            print($"Ep: {ep} | {resultReason} | R: {totalReward:F1} | Eps: {epsilon:F3} | {actionReport}");
+            print($"Ep: {ep} | {resultReason} | R: {totalReward:F1} | Eps: {epsilon:F3} (Decay:{epsilonDecay:F4}) | Ph:{targetScript?.currentPhase} | {actionReport}");
 
             if (ep % 20 == 0)
             {
@@ -262,68 +368,83 @@ public class AjanRL : MonoBehaviour
                 SaveNetwork();
             }
         }
+
+        // Egitim bittiginde son episode'u zorla yazdir
+        if (FindObjectOfType<TrainingAnalyticsUI>())
+            FindObjectOfType<TrainingAnalyticsUI>().LogEpisodeData(currentEpisodeIndex);
+
         SaveNetwork();
         isTraining = false;
     }
 
-    IEnumerator AjanTesting()
+    public IEnumerator AjanTestingLoop(int episodeCount)
     {
-        print("=== TESTING START ===");
         isTraining = false;
-        env.Reset();
 
-        bool done = false;
-        int steps = 0;
+        // Egitim baslarken UI sayacini temizle
+        if (FindObjectOfType<TrainingAnalyticsUI>())
+            FindObjectOfType<TrainingAnalyticsUI>().ResetTracking();
 
-        int testMaxSteps = 300;
+        float testEpsilon = 0f;
 
-        while (!done && steps < testMaxSteps)
+        for (int ep = 1; ep <= episodeCount; ep++)
         {
-            float[] state = GetObservation();
-            float[] qValues = mlp.Forward(state);
-            int rlAction = GetActionFromQ(qValues);
+            currentEpisodeIndex = ep;
+            env.Reset();
 
-            string qLog = $"Step {steps} Q-Values: ";
-            qLog += $"Up:{qValues[0]:F2} Down:{qValues[1]:F2} Right:{qValues[2]:F2} Left:{qValues[3]:F2} ";
-            qLog += $"BOMB:{qValues[4]:F2} Wait:{qValues[5]:F2}";
+            bool done = false;
+            int steps = 0;
+            float totalReward = 0;
+            int episodeBombs = 0;
+            int episodeDangerSteps = 0;
 
-            print(qLog);
-            int finalAction = rlAction;
-
-            if (useSafetyRule && pathfinder.IsInDanger(env.gridX, env.gridY))
+            while (!done && steps < 400) // Test icin max step
             {
-                int safeMove = pathfinder.GetSafeMove(env.gridX, env.gridY);
-                if (safeMove != -1)
-                    finalAction = safeMove;
+                float[] state = GetObservation();
+                float[] qValues = mlp.Forward(state);
+                int action = GetActionFromQ(qValues);
+
+                // Guvenlik kurali aktifse ve tehlike varsa ez
+                if (useSafetyRule && pathfinder.IsInDanger(env.gridX, env.gridY))
+                {
+                    int safeMove = pathfinder.GetSafeMove(env.gridX, env.gridY);
+                    if (safeMove != -1) action = safeMove;
+                }
+
+                // Metrik takibi
+                if (action == 4 && env.agentBombActive == false) episodeBombs++;
+                if (pathfinder.IsInDanger(env.gridX, env.gridY)) episodeDangerSteps++;
+
+                (float r, bool t) = env.Step(action);
+
+                totalReward += r;
+                done = t;
+                steps++;
+
+                currentEpisodeReward = totalReward;
+                currentEpisodeSteps = steps;
+
+                yield return null;
             }
 
-            (float r, bool t) = env.Step(finalAction);
-            done = t;
-            steps++;
+            string resultReason = "TIMEOUT";
+            string dType = "None";
+            if (env.kill) resultReason = "WIN";
+            else if (!env.isAlive) { resultReason = "DEATH"; dType = env.deathType.ToString(); }
 
-            yield return new WaitForSeconds(0.5f);
-        }
+            lastOutcome = resultReason;
+            lastDeathType = dType;
+            lastBombsDropped = episodeBombs;
+            lastSafetyDangerSteps = episodeDangerSteps;
+            lastExplorationRate = 0;
 
-        string resultLog = "";
-        if (env.kill)
-        {
-            resultLog = "VICTORY! (Target Eliminated)";
-            Debug.Log($"<color=green>{resultLog}</color>");
-        }
-        else if (!env.isAlive)
-        {
-            resultLog = "DEFEAT! (Agent Died)";
-            Debug.Log($"<color=red>{resultLog}</color>");
-        }
-        else
-        {
-            resultLog = "TIMEOUT! (Steps Exceeded)";
-            Debug.Log($"<color=yellow>{resultLog}</color>");
+            yield return new WaitForSeconds(0.01f);
         }
 
-        print($"TEST FINISHED: {resultLog} in {steps} steps.");
+        // Egitim bittiginde son episode'u yazdir
+        if (FindObjectOfType<TrainingAnalyticsUI>())
+            FindObjectOfType<TrainingAnalyticsUI>().LogEpisodeData(currentEpisodeIndex);
     }
-
     void TrainNetwork()
     {
         List<Experience> batch = replayBuffer.Sample(batchSize);
@@ -426,17 +547,23 @@ public class AjanRL : MonoBehaviour
 
     void SaveNetwork()
     {
-        string path = System.IO.Path.Combine(Application.persistentDataPath, saveFileName);
+        string path = Path.Combine(Application.persistentDataPath, currentSaveFileName);
         mlp.SaveModel(path);
     }
 
     void LoadNetwork()
     {
-        string path = System.IO.Path.Combine(Application.persistentDataPath, saveFileName);
+        string path = Path.Combine(Application.persistentDataPath, currentSaveFileName);
+
         if (File.Exists(path))
         {
             mlp.LoadModel(path);
-            print("Model loaded: " + path);
+            print($"<color=green>Model Loaded: {currentSaveFileName}</color>");
+        }
+        else
+        {
+            mlp = new SimpleMLP(inputSize, hiddenLayerSize, env.numActions, learningRate);
+            print($"<color=yellow>New Model Created: {currentSaveFileName}</color>");
         }
     }
     private void OnDrawGizmos()

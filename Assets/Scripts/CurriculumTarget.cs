@@ -25,9 +25,29 @@ public class CurriculumTarget : MonoBehaviour
     private int escapeStepsRemaining = 0;
     private Vector2Int safeEscapeTarget;
 
+    public bool curriculumEnabled = true;
+
     void Start()
     {
         env = FindObjectOfType<QBombENV_sc>();
+    }
+
+    public void SetCurriculumMode(bool enabled)
+    {
+        curriculumEnabled = enabled;
+
+        if (!curriculumEnabled)
+        {
+            currentPhase = 3;
+            currentPhaseEpisodes = 0;
+            Debug.Log("Curriculum DISABLED: Locked to Phase 3.");
+        }
+        else
+        {
+            currentPhase = 1;
+            currentPhaseEpisodes = 0;
+            Debug.Log("Curriculum ENABLED: Starting from Phase 1.");
+        }
     }
 
     public void OnTargetStep()
@@ -138,31 +158,22 @@ public class CurriculumTarget : MonoBehaviour
             if (!IsValidPos(next.x, next.y)) continue;
 
             float score = scoreFunc(next);
-            if (score > bestScore)
-            {
-                bestScore = score;
-                bestDir = dir;
-            }
+            if (score > bestScore) { bestScore = score; bestDir = dir; }
         }
 
-        if (bestDir != -1)
-            ExecuteMove(bestDir);
-        else
-            MoveRandomly();
+        if (bestDir != -1) ExecuteMove(bestDir);
     }
 
     List<int> GetValidSafeMoves()
     {
         List<int> moves = new List<int>();
-
         bool checkSafety = env.targetBombActive;
-
         for (int i = 0; i < 4; i++)
         {
             Vector2Int n = GetNextPos(i);
-
-            if (IsValidPos(n.x, n.y) && !checkSafety)
+            if (IsValidPos(n.x, n.y))
             {
+                if (checkSafety && env.dangerMap[n.x, n.y]) continue;
                 moves.Add(i);
             }
         }
@@ -180,37 +191,24 @@ public class CurriculumTarget : MonoBehaviour
         }
     }
 
-    bool IsValidPos(int x, int y)
-    {
-        return x >= 0 && x < env.width && y >= 0 && y < env.height && env.map[x, y] == 0;
-    }
+    bool IsValidPos(int x, int y) => x >= 0 && x < env.width && y >= 0 && y < env.height && env.map[x, y] == 0;
 
     Vector2Int GetNextPos(int dir)
     {
         int nx = env.targetX, ny = env.targetY;
-        switch (dir)
-        {
-            case 0: ny++; break; // Yukari
-            case 1: ny--; break; // Asagi
-            case 2: nx++; break; // Sag
-            case 3: nx--; break; // Sol
-        }
+        switch (dir) { case 0: ny++; break; case 1: ny--; break; case 2: nx++; break; case 3: nx--; break; }
         return new Vector2Int(nx, ny);
     }
 
-    int ManhattanDistanceToPlayer() =>
-        Mathf.Abs(env.targetX - env.gridX) + Mathf.Abs(env.targetY - env.gridY);
-
-    int ManhattanDistance(Vector2Int p, int x, int y) =>
-        Mathf.Abs(p.x - x) + Mathf.Abs(p.y - y);
+    int ManhattanDistanceToPlayer() => Mathf.Abs(env.targetX - env.gridX) + Mathf.Abs(env.targetY - env.gridY);
+    int ManhattanDistance(Vector2Int p, int x, int y) => Mathf.Abs(p.x - x) + Mathf.Abs(p.y - y);
 
     bool IsNearBreakableWall()
     {
         for (int i = 0; i < 4; i++)
         {
             Vector2Int n = GetNextPos(i);
-            if (n.x >= 0 && n.x < env.width && n.y >= 0 && n.y < env.height && env.map[n.x, n.y] == 1)
-                return true;
+            if (n.x >= 0 && n.x < env.width && n.y >= 0 && n.y < env.height && env.map[n.x, n.y] == 1) return true;
         }
         return false;
     }
@@ -226,28 +224,19 @@ public class CurriculumTarget : MonoBehaviour
     {
         int dx = target.x - env.targetX;
         int dy = target.y - env.targetY;
-
         if (dx > 0 && IsValidMove(2)) return 2;
         if (dx < 0 && IsValidMove(3)) return 3;
         if (dy > 0 && IsValidMove(0)) return 0;
         if (dy < 0 && IsValidMove(1)) return 1;
-
         return -1;
     }
 
-    bool IsValidMove(int dir)
-    {
-        Vector2Int n = GetNextPos(dir);
-        return IsValidPos(n.x, n.y);
-    }
+    bool IsValidMove(int dir) => IsValidPos(GetNextPos(dir).x, GetNextPos(dir).y);
 
     Vector2Int FindSafeEscapeCell()
     {
         bool[,] simDanger = new bool[env.width, env.height];
-        for (int x = 0; x < env.width; x++)
-            for (int y = 0; y < env.height; y++)
-                simDanger[x, y] = env.dangerMap[x, y];
-
+        for (int x = 0; x < env.width; x++) for (int y = 0; y < env.height; y++) simDanger[x, y] = env.dangerMap[x, y];
         int tx = env.targetX, ty = env.targetY;
         simDanger[tx, ty] = true;
         if (tx + 1 < env.width) simDanger[tx + 1, ty] = true;
@@ -260,25 +249,18 @@ public class CurriculumTarget : MonoBehaviour
         HashSet<Vector2Int> visited = new HashSet<Vector2Int>();
         queue.Enqueue(new Vector2Int(tx, ty));
         visited.Add(new Vector2Int(tx, ty));
-
         Vector2Int[] dirs = { Vector2Int.up, Vector2Int.down, Vector2Int.right, Vector2Int.left };
 
         while (queue.Count > 0)
         {
             Vector2Int curr = queue.Dequeue();
             if (!simDanger[curr.x, curr.y]) return curr;
-
             foreach (var d in dirs)
             {
                 Vector2Int next = curr + d;
-                if (IsValidPos(next.x, next.y) && !visited.Contains(next))
-                {
-                    visited.Add(next);
-                    queue.Enqueue(next);
-                }
+                if (IsValidPos(next.x, next.y) && !visited.Contains(next)) { visited.Add(next); queue.Enqueue(next); }
             }
         }
-
         return new Vector2Int(-1, -1);
     }
 
@@ -287,20 +269,12 @@ public class CurriculumTarget : MonoBehaviour
         escapeStepsRemaining = 0;
         totalEpisodes++;
         currentPhaseEpisodes++;
-        CheckPhaseTransition();
+        if (curriculumEnabled) CheckPhaseTransition();
     }
 
     void CheckPhaseTransition()
     {
-        if (currentPhase == 1 && currentPhaseEpisodes >= phase1Duration)
-        {
-            currentPhase = 2;
-            currentPhaseEpisodes = 0;
-        }
-        else if (currentPhase == 2 && currentPhaseEpisodes >= phase2Duration)
-        {
-            currentPhase = 3;
-            currentPhaseEpisodes = 0;
-        }
+        if (currentPhase == 1 && currentPhaseEpisodes >= phase1Duration) { currentPhase = 2; currentPhaseEpisodes = 0; }
+        else if (currentPhase == 2 && currentPhaseEpisodes >= phase2Duration) { currentPhase = 3; currentPhaseEpisodes = 0; }
     }
 }

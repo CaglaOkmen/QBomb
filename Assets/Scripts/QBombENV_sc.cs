@@ -29,6 +29,10 @@ public class QBombENV_sc : MonoBehaviour
 
     public int[,] map; // 0:zemin, 1:breakable, 2:unbreakable
 
+    // Istatistik icin
+    public int totalBreakableWalls = 0; 
+    public int wallsBroken = 0;
+
     private Pathfinder pathfinder;
 
     private List<GameObject> activeBombs = new List<GameObject>(); // Aktif tum bombalar
@@ -66,6 +70,9 @@ public class QBombENV_sc : MonoBehaviour
         map = new int[width, height];
         dangerMap = new bool[width, height];
 
+        totalBreakableWalls = 0;
+        wallsBroken = 0;
+
         for (int x = 0; x < width; x++)
         {
             for (int y = 0; y < height; y++)
@@ -87,6 +94,7 @@ public class QBombENV_sc : MonoBehaviour
                         if (Random.Range(0, 2) == 0) // %50 ihtimalle kirilabilir duvar
                         {
                             map[x, y] = 1;
+                            totalBreakableWalls++;
                             Instantiate(breakable_wall, pos, Quaternion.identity);
                         }
                         else map[x, y] = 0;
@@ -175,6 +183,11 @@ public class QBombENV_sc : MonoBehaviour
                 dangerMap[nx, ny] = active;
             }
         }
+    }
+
+    public void WallDestroyed()
+    {
+        wallsBroken++;
     }
 
     public (float reward, bool done) Step(int action)
@@ -353,6 +366,7 @@ public class QBombENV_sc : MonoBehaviour
         foreach (var obj in GameObject.FindGameObjectsWithTag("bomb")) Destroy(obj);
 
         CreateGrid(); // Haritayi yeniden olustur
+        activeBombs.Clear(); // Temizle
 
         terminated = false;
         agentBombActive = false;

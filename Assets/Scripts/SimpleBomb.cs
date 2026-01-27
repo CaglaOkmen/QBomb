@@ -48,7 +48,7 @@ public class SimpleBomb : MonoBehaviour
     void Patlat()
     {
         DestroyAll(bombGridX, bombGridY);
-        env.MarkBombDanger(bombGridX, bombGridY, false);
+        if (env != null) env.MarkBombDanger(bombGridX, bombGridY, false);
 
         Destroy(gameObject);
         // Bomba sahibine gore aktif bomba sayisini azalt
@@ -71,10 +71,21 @@ public class SimpleBomb : MonoBehaviour
             {
                 if (env.map[nx, ny] == 1) // Kirilabilir duvar
                 {
-                    env.map[nx, ny] = 0;
+                    env.map[nx, ny] = 0; // Harita verisini temizle
+
+                    env.WallDestroyed(); // Istatistik icin
+
                     Vector3 wallPos = new Vector3(nx * cellSize, ny * cellSize, 0);
-                    Collider2D hit = Physics2D.OverlapBox(wallPos, Vector2.one * 0.5f, 0);
-                    if (hit != null && hit.gameObject.CompareTag("breakable")) Destroy(hit.gameObject);
+
+                    Collider2D[] hits = Physics2D.OverlapBoxAll(wallPos, Vector2.one * (cellSize * 0.8f), 0);
+                    foreach (var hit in hits)
+                    {
+                        if (hit.gameObject.CompareTag("breakable"))
+                        {
+                            Destroy(hit.gameObject);
+                            break; 
+                        }
+                    }
                 }
 
                 if (env.map[nx, ny] != 2)
