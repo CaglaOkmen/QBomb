@@ -79,8 +79,8 @@ public class ExperimentManager : MonoBehaviour
             if (experimentInfoText)
                 experimentInfoText.text = $"TESTING Scen {i + 1}/6\nModel: {modelBaseName}\nPhase: {s.phase}\nAggro: {s.aggro}";
 
-            // 3. 30 Episode Testi Kos
-            yield return StartCoroutine(agentScript.AjanTestingLoop(30));
+            // 3. 100 Episode Testi Kos
+            yield return StartCoroutine(agentScript.AjanTestingLoop(100));
 
             Debug.Log($"<color=green>Senaryo {i + 1} Tamamlandi: {scenarioName}</color>");
         }
