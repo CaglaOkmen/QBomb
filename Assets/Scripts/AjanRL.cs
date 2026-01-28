@@ -7,7 +7,7 @@ using System.IO;
 public class AjanRL : MonoBehaviour
 {
     [Header("Hiperparametreler")]
-    public int maxEpisode = 3000;
+    public int maxEpisode = 4000;
     public float learningRate = 0.0001f;
     public float gamma = 0.99f;
     public float epsilon = 1.0f;
@@ -97,7 +97,7 @@ public class AjanRL : MonoBehaviour
         int gridInputs = gridCells * channelsPerCell;
 
         // Global inputs: Target X,Y, Targete uzaklýk, tehlikede mi, Ajan ve Target bombalai aktif mi, Yol acik kapali
-        int globalInputs = 7;
+        int globalInputs = 5;
 
         inputSize = gridInputs + globalInputs;
 
@@ -189,12 +189,6 @@ public class AjanRL : MonoBehaviour
         float normalizedDist = manhattanDist / (env.width + env.height);
         observations[index++] = normalizedDist;
 
-        // Ajan Bomba durumu
-        observations[index++] = env.agentBombActive ? 1.0f : 0.0f;
-
-        // Target Bomba durumu
-        observations[index++] = env.targetBombActive ? 1.0f : 0.0f;
-
         // Tehlike durumu
         bool inDanger = pathfinder.IsInDanger(env.gridX, env.gridY);
         observations[index++] = inDanger ? 1.0f : 0.0f;
@@ -238,21 +232,21 @@ public class AjanRL : MonoBehaviour
                     {
                         if (currentPhase == 1)
                         {
-                            // Faz 1: Hýzlý (1.0 -> 0.05, Decay 0.990)
-                            epsilonDecay = 0.99f;
+                            // Faz 1: Hýzlý (1.0 -> 0.05, Decay 0.992)
+                            epsilonDecay = 0.9925f;
                         }
                         else if (currentPhase == 2)
                         {
                             // Faz 2: Orta (Baslangic 0.8, Decay 0.995)
                             epsilon = 0.8f;
-                            epsilonDecay = 0.995f;
+                            epsilonDecay = 0.997f;
                             print($"<color=yellow>PHASE 2 START: Epsilon reset to 0.8</color>");
                         }
                         else if (currentPhase == 3)
                         {
                             // Faz 3: Yavas (Baslangic 0.6, Decay 0.999)
                             epsilon = 0.6f;
-                            epsilonDecay = 0.999f;
+                            epsilonDecay = 0.9991f;
                             print($"<color=red>PHASE 3 START: Epsilon reset to 0.6</color>");
                         }
                         lastPhaseTracker = currentPhase;
@@ -263,7 +257,7 @@ public class AjanRL : MonoBehaviour
                     // Mufredat Kapalý
                     if (lastPhaseTracker != 0)
                     {
-                        epsilonDecay = 0.999f;
+                        epsilonDecay = 0.9992f;
                         lastPhaseTracker = 0;
                     }
                 }
