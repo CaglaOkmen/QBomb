@@ -192,7 +192,7 @@ public class QBombENV_sc : MonoBehaviour
 
     public (float reward, bool done) Step(int action)
     {
-        float reward = -0.01f;
+        float reward = -0.02f;
         int newX = gridX;
         int newY = gridY;
 
@@ -217,9 +217,9 @@ public class QBombENV_sc : MonoBehaviour
         // --- BEKLEME (5) ---
         if (action == 5) 
         {
-            if (!agentBombActive) reward -= 0.5f;
+            if (!agentBombActive) reward -= 0.2f;
             consecutiveWaitCount++;
-            if (consecutiveWaitCount > 3) reward -= 0.1f * (consecutiveWaitCount - 3);
+            if (consecutiveWaitCount > 3) reward -= 0.15f * (consecutiveWaitCount - 3);
         }
         else consecutiveWaitCount = 0;
 
@@ -250,9 +250,9 @@ public class QBombENV_sc : MonoBehaviour
                         float dist = Mathf.Abs(targetX - gridX) + Mathf.Abs(targetY - gridY);
                         if (dist < 3.0f) reward -= 0.1f; // Hedef yakinda, belki gelir stratejik
                         else if (dist == 3.0f) reward -= 0.5f; // Hedef gelebilir ama daha dusuk ihtimal
-                        else reward -= 2.0f; // Hedef uzakta, etraf bos
+                        else reward -= 4.0f; // Hedef uzakta, etraf bos
                     }
-                    else reward += (broken * 5f); // duvar kiriyorsa 
+                    else reward += (broken * 6f); // duvar kiriyorsa 
                 }
                 else reward += 20.0f; // Hedef menzildeyse 
             }
@@ -267,7 +267,7 @@ public class QBombENV_sc : MonoBehaviour
             if (newDistanceToTarget < oldDistanceToTarget && newDistanceToTarget != float.MaxValue)
                 reward += 0.1f;
             else
-                reward -= 0.05f;
+                reward -= 0.15f;
         }
 
         // Duvar kontrolu
@@ -288,7 +288,7 @@ public class QBombENV_sc : MonoBehaviour
                 gridY = newY;
             }
         }
-        if (pathfinder.IsInDanger(gridX, gridY)) reward -= 0.1f;
+        if (pathfinder.IsInDanger(gridX, gridY)) reward -= 0.05f;
 
         if (agentObject != null)
             agentObject.transform.position = new Vector3(gridX * cellSize, gridY * cellSize, 0);
