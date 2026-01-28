@@ -1,0 +1,4 @@
+Episode;Outcome;DeathType;Phase;Steps;TotalReward;Epsilon;ExplorationRate;WallsInitial;WallsBroken;BombsDropped;SafetyDangerSteps
+1;WIN;None;1;6;219,20;1,0000;0,00;14;1;1;2
+2;TIMEOUT;None;1;400;-11453,75;1,0000;0,00;15;2;2;4
+3;TIMEOUT;None;1;400;-364,00;1,0000;0,00;10;2;80;159
