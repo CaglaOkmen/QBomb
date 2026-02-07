@@ -1,6 +1,9 @@
 using UnityEngine;
 using System;
+
+#if !UNITY_WEBGL || UNITY_EDITOR
 using System.IO;
+#endif
 
 [System.Serializable]
 public class SimpleMLP
@@ -175,14 +178,31 @@ public class SimpleMLP
         data.flatWeightsHO = new float[hiddenSize * outputSize];
         for (int i = 0; i < hiddenSize; i++) for (int j = 0; j < outputSize; j++) data.flatWeightsHO[i * outputSize + j] = weightsHO[i, j];
 
-        File.WriteAllText(path, JsonUtility.ToJson(data));
-        Debug.Log("Model saved: " + path);
+        string jsonData = JsonUtility.ToJson(data);
+
+#if !UNITY_WEBGL || UNITY_EDITOR
+        File.WriteAllText(path, jsonData);
+        Debug.Log("Model saved to file: " + path);
+#else
+        // WebGL: Dosya yerine PlayerPrefs
+        PlayerPrefs.SetString(path, jsonData);
+        PlayerPrefs.Save();
+        Debug.Log("Model saved to PlayerPrefs with key: " + path);
+#endif
     }
 
     public void LoadModel(string path)
     {
+#if !UNITY_WEBGL || UNITY_EDITOR
         if (!File.Exists(path)) return;
-        ModelData data = JsonUtility.FromJson<ModelData>(File.ReadAllText(path));
+        string json = File.ReadAllText(path);
+#else
+        // WebGL Kontrolu
+        if (!PlayerPrefs.HasKey(path)) return;
+        string json = PlayerPrefs.GetString(path);
+#endif
+
+        ModelData data = JsonUtility.FromJson<ModelData>(json);
 
         if (data.inputSize != inputSize || data.hiddenSize != hiddenSize || data.outputSize != outputSize) return;
 

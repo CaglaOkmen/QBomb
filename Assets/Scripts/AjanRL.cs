@@ -2,7 +2,11 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using System.Linq;
+
+// WebGL haricinde IO kutuphanesini kullan
+#if !UNITY_WEBGL || UNITY_EDITOR
 using System.IO;
+#endif
 
 public class AjanRL : MonoBehaviour
 {
@@ -541,12 +545,18 @@ public class AjanRL : MonoBehaviour
 
     void SaveNetwork()
     {
+#if !UNITY_WEBGL || UNITY_EDITOR
         string path = Path.Combine(Application.persistentDataPath, currentSaveFileName);
         mlp.SaveModel(path);
+#else
+        // WebGL: Sadece dosya ismini (Key olarak) gonder
+        mlp.SaveModel(currentSaveFileName);
+#endif
     }
 
     void LoadNetwork()
     {
+#if !UNITY_WEBGL || UNITY_EDITOR
         string path = Path.Combine(Application.persistentDataPath, currentSaveFileName);
 
         if (File.Exists(path))
@@ -559,7 +569,21 @@ public class AjanRL : MonoBehaviour
             mlp = new SimpleMLP(inputSize, hiddenLayerSize, env.numActions, learningRate);
             print($"<color=yellow>New Model Created: {currentSaveFileName}</color>");
         }
+#else
+        // WebGL: PlayerPrefs kontrolu
+        if (PlayerPrefs.HasKey(currentSaveFileName))
+        {
+            mlp.LoadModel(currentSaveFileName);
+            print($"<color=green>Model Loaded (PlayerPrefs): {currentSaveFileName}</color>");
+        }
+        else
+        {
+            mlp = new SimpleMLP(inputSize, hiddenLayerSize, env.numActions, learningRate);
+            print($"<color=yellow>New Model Created (PlayerPrefs): {currentSaveFileName}</color>");
+        }
+#endif
     }
+
     private void OnDrawGizmos()
     {
         if (env == null) return;

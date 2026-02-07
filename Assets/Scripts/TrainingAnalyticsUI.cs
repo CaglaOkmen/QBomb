@@ -2,8 +2,11 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
-using System.IO;
 using System.Linq;
+
+#if !UNITY_WEBGL || UNITY_EDITOR
+using System.IO;
+#endif
 
 public class TrainingAnalyticsUI : MonoBehaviour
 {
@@ -49,6 +52,7 @@ public class TrainingAnalyticsUI : MonoBehaviour
     }
     public void SetCSVFileName(string fileName)
     {
+#if !UNITY_WEBGL || UNITY_EDITOR
         string folderPath = Path.Combine(Application.dataPath, "Analysis");
         if (!Directory.Exists(folderPath)) Directory.CreateDirectory(folderPath);
 
@@ -61,6 +65,9 @@ public class TrainingAnalyticsUI : MonoBehaviour
             File.WriteAllText(csvFilePath, header + "\n");
         }
         Debug.Log($"CSV Log Hedefi: {fileName}");
+#else
+        Debug.Log("WebGL Mode: CSV writing disabled for " + fileName);
+#endif
     }
 
     void Update()
@@ -100,6 +107,8 @@ public class TrainingAnalyticsUI : MonoBehaviour
 
     public void LogEpisodeData(int episode)
     {
+        // WebGL de dosya yazma islemi yapilmaz
+#if !UNITY_WEBGL || UNITY_EDITOR
         if (string.IsNullOrEmpty(csvFilePath)) return;
 
         string outcome = agentScript.lastOutcome;
@@ -127,5 +136,6 @@ public class TrainingAnalyticsUI : MonoBehaviour
         {
             Debug.LogError("CSV Yazma Hatasý: " + e.Message);
         }
+#endif
     }
 }
